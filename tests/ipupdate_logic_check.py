@@ -438,8 +438,9 @@ check("重试 状态复位", STORE[f"{SEC}.location_missing"] == "0" and m._get_
 orig_which = m.shutil.which
 m.shutil.which = lambda name: None
 check("重试 非Termux不重试", m._location_capable() is False)
-m.shutil.which = orig_which
+m.shutil.which = lambda name: f"/usr/bin/{name}" if name in ("termux-location", "termux-notification-list") else None
 check("重试 Termux可重试", m._location_capable() is True)
+m.shutil.which = orig_which
 
 print("-" * 40)
 print(f"PASS={PASS} FAIL={FAIL}")
