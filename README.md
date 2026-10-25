@@ -35,8 +35,10 @@ python etc/ipupdate.py
 ```bash
 git clone --recurse-submodules https://github.com/heart5/joplin-ipreport.git
 mkdir -p data
-cp <原 happyjoplin>/data/happyjpip.ini data/   # 机器本地状态，不入库
+cp <原 happyjoplin>/data/*.ini data/   # 机器本地状态与 Joplin 连接配置，不入库
 ```
+
+`func` 子模块需与 happyjoplin 保持同一 commit，升级时两仓库同步。
 
 cron wrapper（Termux 示例）：
 
