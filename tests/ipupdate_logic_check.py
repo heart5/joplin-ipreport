@@ -361,6 +361,9 @@ items_multi = [
     notif("26° 35' 20.0000\" N, 106° 42' 50.0000\" E", "2026-10-25 09:28:00"),
 ]
 orig_termux = m._run_termux_json
+orig_which_notif = m.shutil.which
+m.shutil.which = lambda name: f"/usr/bin/{name}"
+m.NOTIFICATION_LIST_RETRY_DELAY_SEC = 0
 m._run_termux_json = lambda args, timeout: items_multi
 loc = m.collect_gpslogger_location(now=NOW)
 check("通知采集 选择最新", loc and close(loc["latitude"], 26.588889, 1e-4) and loc["provider"] == "gpslogger")
@@ -373,6 +376,36 @@ m._run_termux_json = lambda args, timeout: [notif(items_multi[0]["title"], None)
 check("通知采集 无时间拒绝", m.collect_gpslogger_location(now=NOW) is None)
 m._run_termux_json = lambda args, timeout: {"not": "list"}
 check("通知采集 非列表拒绝", m.collect_gpslogger_location(now=NOW) is None)
+
+# 监听器瞬时不可用（NPE 崩溃后重绑定）时的读取重试
+flaky = {"n": 0}
+
+
+def flaky_notif(args, timeout):
+    flaky["n"] += 1
+    return None if flaky["n"] < 3 else items_multi
+
+
+m._run_termux_json = flaky_notif
+loc = m.collect_gpslogger_location(now=NOW)
+check("通知读取 瞬时故障重试成功", loc and loc["provider"] == "gpslogger" and flaky["n"] == 3)
+
+dead = {"n": 0}
+
+
+def dead_notif(args, timeout):
+    dead["n"] += 1
+    return None
+
+
+m._run_termux_json = dead_notif
+check("通知读取 连续失败None", m.collect_gpslogger_location(now=NOW) is None)
+check("通知读取 重试次数", dead["n"] == m.NOTIFICATION_LIST_ATTEMPTS)
+
+m.shutil.which = lambda name: None
+dead["n"] = 0
+check("通知读取 非Termux不重试", m.collect_gpslogger_location(now=NOW) is None and dead["n"] == 0)
+m.shutil.which = lambda name: f"/usr/bin/{name}"
 m._run_termux_json = orig_termux
 
 # 17. collect_live_location 回退链顺序
@@ -418,6 +451,7 @@ loc = m.collect_live_location(retry=True, now=NOW)
 check("重试链 跳过once", not any("once" in c for c in calls))
 check("重试链 通知优先", loc and loc["provider"] == "gpslogger")
 m._run_termux_json = orig_termux
+m.shutil.which = orig_which_notif
 
 # 18. 缺定位重试状态机
 check("重试 _ini_truthy int1", m._ini_truthy(1) is True)

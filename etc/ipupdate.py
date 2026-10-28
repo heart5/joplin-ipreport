@@ -94,6 +94,9 @@ PLACES_URL = "https://loc.xilong9.com/places"
 OSM_LINK_TEMPLATE = "https://www.openstreetmap.org/?mlat={lat}&mlon={lng}&zoom=15"
 GPSLOGGER_PACKAGE = "com.mendhak.gpslogger"
 GPSLOGGER_MAX_AGE_SEC = 1800  # GPSLogger 通知定位的最大可接受陈旧度
+# Termux:API 通知监听器可能瞬时未绑定（getActiveNotifications 空指针崩溃），读取通知列表时短暂重试
+NOTIFICATION_LIST_ATTEMPTS = 3
+NOTIFICATION_LIST_RETRY_DELAY_SEC = 1.0
 LOCATION_RETRY_WARN_AT = 10  # 连续定位失败告警阈值
 LOCATION_RETRY_BACKOFF_MAX_SEC = 3600
 # VPN接口/IP 等字段在日志契约中以这些字符串表示无值
@@ -692,9 +695,23 @@ def _parse_gpslogger_time(text: object) -> Optional[datetime]:
         return None
 
 
+def _fetch_notification_list() -> Optional[list]:
+    """读取通知列表；Termux:API 通知监听器瞬时不可用（进程被回收/重新绑定竞态）时短暂重试."""
+    if shutil.which("termux-notification-list") is None:
+        return None
+    for attempt in range(NOTIFICATION_LIST_ATTEMPTS):
+        items = _run_termux_json(["termux-notification-list"], 20)
+        if isinstance(items, list):
+            return items
+        if attempt + 1 < NOTIFICATION_LIST_ATTEMPTS:
+            time.sleep(NOTIFICATION_LIST_RETRY_DELAY_SEC * (attempt + 1))
+    log.warning("读取通知列表失败：Termux:API 通知监听器不可用（检查电池优化与「通知使用权」）")
+    return None
+
+
 def collect_gpslogger_location(now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
     """读取 GPSLogger 常驻通知中的定位（termux-location 失败时的第一兜底）."""
-    items = _run_termux_json(["termux-notification-list"], 20)
+    items = _fetch_notification_list()
     if not isinstance(items, list):
         return None
     current = now or datetime.now()
